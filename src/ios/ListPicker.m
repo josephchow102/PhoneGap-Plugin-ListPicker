@@ -4,6 +4,8 @@
 #define IS_WIDESCREEN ( fabs( ( double )[ [ UIScreen mainScreen ] bounds ].size.height - ( double )568 ) < DBL_EPSILON )
 #define IS_IPAD UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad
 #define DEVICE_ORIENTATION [UIDevice currentDevice].orientation
+#define EMPTY_ITEMS [NSArray arrayWithObjects:[NSDictionary dictionaryWithObjectsAndKeys:@"", @"value", @"", @"text", nil], nil]
+#define MAX_NUMBER_OF_COLUMNS 3
 
 // UIInterfaceOrientationMask vs. UIInterfaceOrientation
 // A function like this isn't available in the API. It is derived from the enum def for
@@ -30,6 +32,24 @@
   return -1;
 }
 
+- (int)getNumberOfColumnsByItems:(NSArray *)items withIteration:(NSInteger)iteration {
+    if (iteration > MAX_NUMBER_OF_COLUMNS || !items)
+        return 0;
+
+    NSInteger maxDepth = 0;
+    for (NSDictionary *data in items) {
+        NSDictionary *next = [data objectForKey:@"next"];
+        NSInteger depth = 1 + [self getNumberOfColumnsByItems:[next objectForKey:@"items"] withIteration:iteration + 1];
+        maxDepth = MAX(maxDepth, depth);
+    }
+
+    return maxDepth;
+}
+
+- (int)getNumberOfColumnsByItems:(NSArray *)items {
+    return [self getNumberOfColumnsByItems:items withIteration:1];
+}
+
 - (void)showPicker:(CDVInvokedUrlCommand*)command {
 
     self.callbackId = command.callbackId;
@@ -42,6 +62,10 @@
 
     // Hold items in an instance variable
     self.items = [options objectForKey:@"items"];
+    self.numberOfColumns = [self getNumberOfColumnsByItems:self.items];
+    self.assignedValues = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
+    self.columnMappedOptions = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
+    self.selectedRow = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
 
     // Initialize the toolbar with Cancel and Done buttons and title
     UIToolbar *toolbar = [[UIToolbar alloc] initWithFrame: CGRectMake(0, 0, self.viewSize.width, 44)];
@@ -78,7 +102,28 @@
     // Define selected value
     if([options objectForKey:@"selectedValue"]) {
         int i = [self getRowWithValue:[options objectForKey:@"selectedValue"]];
-        if (i != -1) [self.pickerView selectRow:i inComponent:0 animated:NO];
+        if (i != -1) {
+            [self.columnMappedOptions setObject:self.items atIndexedSubscript:0];
+            [self.pickerView selectRow:i inComponent:0 animated:NO];
+            [self.assignedValues setObject:[[[self.columnMappedOptions objectAtIndex:0] objectAtIndex:i] objectForKey:@"value"] atIndexedSubscript:0];
+            [self.selectedRow setObject:[NSNumber numberWithInt:i] atIndexedSubscript:0];
+            NSDictionary *currentObject = [self.items objectAtIndex:i];
+            for (NSInteger j = 1; j < self.numberOfColumns; j++) {
+                NSDictionary *next = [currentObject objectForKey:@"next"];
+                // if (!next) {
+                //     next = [NSDictionary dictionaryWithObjectsAndKeys:EMPTY_ITEMS, @"items", [NSNull null], @"title", nil];
+                // }
+                NSArray *items = [next objectForKey:@"items"];
+                [self.selectedRow setObject:[NSNumber numberWithInt:0] atIndexedSubscript:j];
+                if (!items || items == [NSNull null]) {
+                    items = EMPTY_ITEMS;
+                }
+                [self.columnMappedOptions setObject:items atIndexedSubscript:j];
+                [self.pickerView selectRow:0 inComponent:j animated:NO];
+                [self.assignedValues setObject:[[items objectAtIndex:0] objectForKey:@"value"] atIndexedSubscript:j];
+                currentObject = [[self.columnMappedOptions objectAtIndex:j] objectAtIndex:0];
+            }
+        }
     }
    
     // Initialize the View that should conain the toolbar and picker
@@ -99,6 +144,7 @@
         [view insertSubview:rightEdge atIndex:0];
     }
     
+
     [view addSubview:self.pickerView];
   
     // Check if device is iPad to display popover
@@ -186,7 +232,6 @@
 
 // Picker with toolbar dismissed with done
 - (IBAction)didDismissWithDoneButton:(id)sender {
-
     // Check if device is iPad
     if ( IS_IPAD ) {
         // Emulate a new delegate method
@@ -231,7 +276,7 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self
                                                     name:UIApplicationWillChangeStatusBarOrientationNotification
                                                   object:nil];
-		
+        
     //Hide the view animated and then remove it.
     [UIView animateWithDuration:0.5
                           delay:0.0
@@ -254,10 +299,13 @@
 //
 
 - (void)sendResultsFromPickerView:(UIPickerView *)pickerView withButtonIndex:(NSInteger)buttonIndex {
+    NSError *error;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:self.assignedValues options:0 error:&error];
+    NSString *jsonString;
 
-    // Build returned result
-    NSInteger selectedRow = [pickerView selectedRowInComponent:0];
-    NSString *selectedValue = [[self.items objectAtIndex:selectedRow] objectForKey:@"value"];
+    if (jsonData) {
+        jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    }
     
     // Create Plugin Result
     CDVPluginResult* pluginResult;
@@ -266,7 +314,7 @@
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR];
     }else {
         // Create OK result otherwise
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:selectedValue];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:jsonString];
     }
     
     // Call appropriate javascript function
@@ -277,28 +325,64 @@
 // Picker delegate
 //
 
+- (NSDictionary *)restoreItems:(NSArray *)items atColumn:(NSInteger)column {
+    NSInteger row = [[self.selectedRow objectAtIndex:column] intValue];
+    [self.columnMappedOptions setObject:items atIndexedSubscript:column];
+    if ([items count] <= row) { // Out of range
+        row = 0;
+        [self.selectedRow setObject:[NSNumber numberWithInt:row] atIndexedSubscript:column];
+    }
+    NSDictionary *selected = [items objectAtIndex:row];
+    NSString *value = [selected objectForKey:@"value"];
+    [self.assignedValues setObject:value atIndexedSubscript:column];
+    [self.pickerView selectRow:row inComponent:column animated:NO];
+    return selected;
+}
+
 // Listen picker selected row
 - (void)pickerView:(UIPickerView *)pickerView didSelectRow:(NSInteger)row inComponent:(NSInteger)component {
+    [self.selectedRow setObject:[NSNumber numberWithInt:row] atIndexedSubscript:component];
+    NSDictionary *currentObject = [[self.columnMappedOptions objectAtIndex:component] objectAtIndex:row];
+    [self.assignedValues setObject:[currentObject objectForKey:@"value"] atIndexedSubscript:component];
+    for (NSInteger j = component + 1; j < self.numberOfColumns; j++) {
+        NSDictionary *next = [currentObject objectForKey:@"next"];
+        if (!next) {
+            next = [NSDictionary dictionaryWithObjectsAndKeys:EMPTY_ITEMS, @"items", [NSNull null], @"title", nil];
+        }
+        NSArray *items = [next objectForKey:@"items"];
+        if (!items || items == [NSNull null]) {
+            items = EMPTY_ITEMS;
+        }
+        NSDictionary* restoredItem = [self restoreItems:items atColumn:j];
+        currentObject = restoredItem;
+    }
+    [self.pickerView reloadAllComponents];
 }
 
 // Tell the picker how many rows are available for a given component
 - (NSInteger)pickerView:(UIPickerView *)pickerView numberOfRowsInComponent:(NSInteger)component {
-  return [self.items count];
+    if ([self.columnMappedOptions count] <= component)
+        return 0;
+    NSArray *c = [self.columnMappedOptions objectAtIndex:component];
+    return c ? [c count] : 0;
 }
 
 // Tell the picker how many components it will have
 - (NSInteger)numberOfComponentsInPickerView:(UIPickerView *)pickerView {
-  return 1;
+  return self.numberOfColumns;
 }
 
 // Tell the picker the title for a given component
 - (NSString *)pickerView:(UIPickerView *)pickerView titleForRow:(NSInteger)row forComponent:(NSInteger)component {
-  return [[self.items objectAtIndex:row] objectForKey:@"text"];
+    if ([self.columnMappedOptions count] <= component)
+        return [NSNull null];
+    NSArray *c = [self.columnMappedOptions objectAtIndex:component];
+    return c ? [[c objectAtIndex:row] objectForKey:@"text"] : [NSNull null];
 }
 
 // Tell the picker the width of each row for a given component
 - (CGFloat)pickerView:(UIPickerView *)pickerView widthForComponent:(NSInteger)component {
-  return pickerView.frame.size.width - 30;
+  return (pickerView.frame.size.width - 30) / self.numberOfColumns;
 }
 
 //

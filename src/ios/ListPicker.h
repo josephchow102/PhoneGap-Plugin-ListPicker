@@ -12,6 +12,12 @@
 @property (nonatomic, strong) UIView *modalView;
 @property (nonatomic, strong) NSArray *items;
 
+// Multiple column storage properties
+@property (nonatomic, assign) NSInteger numberOfColumns;
+@property (nonatomic, strong) NSMutableArray *assignedValues;
+@property (nonatomic, strong) NSMutableArray *selectedRow;
+@property (nonatomic, strong) NSMutableArray *columnMappedOptions;
+
 #pragma mark - Instance methods
 
 - (void)showPicker:(CDVInvokedUrlCommand*)command;
