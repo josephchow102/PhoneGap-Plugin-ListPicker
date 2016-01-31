@@ -1,15 +1,18 @@
 package am.armsoft.plugins;
 
+import java.lang.Runnable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.prefs.PreferenceChangeEvent;
 
 import org.json.JSONObject;
 import org.json.JSONArray;
 import org.json.JSONException;
 
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.DialogInterface;
-import android.util.Log;
 
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CallbackContext;
@@ -20,16 +23,136 @@ import org.apache.cordova.PluginResult;
  * This class provides a service.
  */
 public class ListPicker extends CordovaPlugin {
+
+    /**
+     * Private Class;
+     */
+    private static class Picker {
+        final int depth;
+        final Context context;
+        final String title;
+        final Items items;
+        final AlertDialog.Builder builder;
+
+        int selected;
+        DialogInterface.OnClickListener doneClickListener;
+
+        DialogInterface.OnClickListener onClickListener = new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(final DialogInterface dialog, final int which) {
+                selected = which;
+                if (items.items.get(which).nextItems == null) {
+                    doneClickListener.onClick(dialog, which);
+                } else {
+                    final Items nextItems = items.items.get(which).nextItems;
+                    Picker picker = new Picker(context, nextItems, null, depth + 1);
+
+                    picker.setDoneClickListener(new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface childDialog, int childWhich) {
+                            nextItems.selected = childWhich;
+                            doneClickListener.onClick(dialog, which);
+                            childDialog.dismiss();
+                        }
+                    });
+
+                    picker.show();
+                }
+            }
+        };
+
+        public Picker(Context context, final Items items, String title, final Runnable doneRunnable, final DialogInterface.OnCancelListener cancelListener) {
+            this(context, items, title, 0);
+            this.setDoneClickListener(new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    items.selected = which;
+                    dialog.dismiss();
+                    doneRunnable.run();
+                }
+            });
+            this.builder.setOnCancelListener(cancelListener);
+        }
+
+        private Picker(Context context, Items items, String title, int depth) {
+            this.builder = new AlertDialog.Builder(context);
+            this.context = context;
+            this.items = items;
+            this.title = title;
+            this.depth = depth;
+
+            builder.setTitle(title);
+            builder.setSingleChoiceItems(items.texts(), items.selected, onClickListener);
+        }
+
+        public void setDoneClickListener(DialogInterface.OnClickListener doneClickListener) {
+            this.doneClickListener = doneClickListener;
+        }
+
+        public void show() {
+            this.builder.show();
+        }
+    }
+
+    private static class Items {
+        ArrayList<Item> items;
+        int selected;
+
+        public Items(JSONArray items, ArrayList<String> selectedValue) throws JSONException {
+            this.items = new ArrayList<Item>();
+            this.selected = 0;
+
+            String selected = selectedValue.get(0);
+            ArrayList<String> newSelectedValue = (ArrayList<String>) selectedValue.clone();
+            newSelectedValue.remove(0);
+            for (int i = 0; i < items.length(); i++) {
+                Item item = new Item(items.getJSONObject(i), newSelectedValue);
+                if (selected.equals(item.value)) {
+                    this.selected = i;
+                }
+                this.items.add(item);
+            }
+        }
+
+        public CharSequence[] texts() {
+            ArrayList<String> texts = new ArrayList<String>();
+            for (Item item : this.items) {
+                texts.add(item.text);
+            }
+            return texts.toArray(new CharSequence[texts.size()]);
+        }
+
+        public ArrayList<String> selectedValues() {
+            ArrayList<String> selectedValues;
+            if (this.items.get(this.selected).nextItems == null) {
+                selectedValues = new ArrayList<String>();
+            } else {
+                selectedValues = this.items.get(this.selected).nextItems.selectedValues();
+            }
+            selectedValues.add(0, this.items.get(this.selected).value);
+            return selectedValues;
+        }
+    }
+
+    private static class Item {
+        String text;
+        String value;
+        Items nextItems;
+
+        public Item(JSONObject jsonObject, ArrayList<String> selectedValue) throws JSONException {
+            this.text = jsonObject.getString("text");
+            this.value = jsonObject.getString("value");
+            if (jsonObject.has("next")) {
+                this.nextItems = new Items(jsonObject.getJSONObject("next").getJSONArray("items"), selectedValue);
+            }
+        }
+    }
+
     /**
      * Private Member;
      */
-    private String m_title;
-    private JSONArray m_selectedValues;
-    private static int MAX_NUMBER_OF_COLUMNS = 3;
-
-    private abstract class CallbackInterface {
-        abstract void onSuccess();
-    }
+    private String mTitle;
+    private Items mItems;
 
     /**
      * Constructor.
@@ -58,143 +181,47 @@ public class ListPicker extends CordovaPlugin {
     // LOCAL METHODS
     // --------------------------------------------------------------------------
 
-    public void showPicker(final JSONArray data, final CallbackContext callbackContext) throws JSONException {
-    
+    private void showPicker(final JSONArray data, final CallbackContext callbackContext) throws JSONException {
+
         final CordovaInterface cordova = this.cordova;
-        
+
         final JSONObject options = data.getJSONObject(0);
-        final String selectedValue = options.getString("selectedValue");
-        final JSONArray items = options.getJSONArray("items");
-        m_selectedValues = new JSONArray("[" + selectedValue + "]");
-        m_title = options.getString("title");
 
-        // Get the texts to display
-        int index = -1;
-        List<String> list = new ArrayList<String>();
-        for(int i = 0; i < items.length(); i++) {
-            JSONObject item = items.getJSONObject(i);
-            list.add(item.getString("text"));
-            if (selectedValue.equals(item.getString("value"))) {
-              index = i;
-            }
-        }
-        final CharSequence[] texts = list.toArray(new CharSequence[list.size()]);
-        final int selectedIndex = index;
-        
-        // Create and show the alert dialog
-        Runnable runnable = new Runnable() {
+        this.mTitle = options.getString("title");
+        this.mItems = new Items(
+                options.getJSONArray("items"),
+                convertJSONArray(options.getJSONArray("selectedValue"))
+        );
+
+        this.cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
             public void run() {
-                AlertDialog.Builder builder = new AlertDialog.Builder(cordova.getActivity());
-                
-                // Set dialog properties
-                builder.setTitle(m_title);
-                builder.setCancelable(true);
-                builder.setSingleChoiceItems(texts, selectedIndex, new DialogInterface.OnClickListener() {
-                    public void onClick(final DialogInterface dialog, int index) {
-                        try {
-                            final JSONObject selectedItem = items.getJSONObject(index);
-                            m_selectedValues = new JSONArray("[" + selectedItem.getString("value") + "]");
-
-                            try {
-                                final JSONObject next = selectedItem.getJSONObject("next");
-                                showListPickerRecursive(next, 1, callbackContext, new CallbackInterface() {
-                                    public void onSuccess() {
-                                        dialog.dismiss();
-                                    }
-                                });
-                            } catch (JSONException e) {
-                                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, m_selectedValues));
-                                dialog.dismiss();
-                            }
-                        }
-                        catch (JSONException e) {
-                            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.JSON_EXCEPTION));
-                        }
+                Picker picker = new Picker(cordova.getActivity(), mItems, mTitle, new Runnable() {
+                    @Override
+                    public void run() {
+                        ArrayList<String> selectedValues = mItems.selectedValues();
+                        JSONArray selectedJsonArray = new JSONArray(selectedValues);
+                        callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, selectedJsonArray));
+                    }
+                }, new DialogInterface.OnCancelListener() {
+                    @Override
+                    public void onCancel(DialogInterface dialog) {
+                        callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
                     }
                 });
-                builder.setOnCancelListener(new  DialogInterface.OnCancelListener() { 
-                    public void onCancel(DialogInterface dialog) { 
-                        callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
-                    } 
-                }); 
-                
-                // Show alert dialog
-                AlertDialog alert = builder.create();
-                alert.getWindow().getAttributes().windowAnimations = android.R.style.Animation_Dialog;
-                alert.show(); 
-            }
-        };
-        this.cordova.getActivity().runOnUiThread(runnable);
-    }
-
-    private void showListPickerRecursive(final JSONObject data, final int depth, final CallbackContext callbackContext, final CallbackInterface callbackInterface) throws JSONException {
-        if (depth >= MAX_NUMBER_OF_COLUMNS) {
-            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, m_selectedValues));
-            callbackInterface.onSuccess();
-            return;
-        }
-
-        String title;
-        final JSONArray items;
-        try {
-            items = data.getJSONArray("items");
-        } catch (JSONException e) {
-            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, m_selectedValues));
-            callbackInterface.onSuccess();
-            return;
-        }
-        try {
-            title = data.getString("title");
-        } catch (JSONException e) {
-            title = m_title;
-        }
-
-        List<String> list = new ArrayList<String>();
-        for (int i = 0; i < items.length(); i++) {
-            JSONObject item = items.getJSONObject(i);
-            list.add(item.getString("text"));
-        }
-
-        final CharSequence[] texts = list.toArray(new CharSequence[list.size()]);
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(cordova.getActivity());
-        builder.setTitle(title);
-        builder.setCancelable(true);
-        builder.setSingleChoiceItems(texts, 0, new DialogInterface.OnClickListener() {
-            public void onClick(final DialogInterface dialog, int index) {
-                try {
-                    final JSONObject selectedItem = items.getJSONObject(index);
-                    final String selectedValue = selectedItem.getString("value");
-
-                    m_selectedValues.put(selectedValue);
-
-                    try {
-                        final JSONObject next = selectedItem.getJSONObject("next");
-                        showListPickerRecursive(next, depth + 1, callbackContext, new CallbackInterface() {
-                            public void onSuccess() {
-                                dialog.dismiss();
-                                callbackInterface.onSuccess();
-                            }
-                        });
-                    } catch (JSONException e) {
-                        callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, m_selectedValues));
-                        dialog.dismiss();
-                        callbackInterface.onSuccess();
-                    }
-                } catch (JSONException e) {
-                    callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.JSON_EXCEPTION));
-                }
+                picker.show();
             }
         });
-        builder.setOnCancelListener(new DialogInterface.OnCancelListener() {
-            public void onCancel(DialogInterface dialog) {
-                m_selectedValues.remove(m_selectedValues.length() - 1);
-            }
-        });
-
-        AlertDialog alert = builder.create();
-        alert.getWindow().getAttributes().windowAnimations = android.R.style.Animation_Dialog;
-        alert.show();
     }
 
+    private static ArrayList<String> convertJSONArray(JSONArray jsonArray) throws JSONException {
+        ArrayList<String> list = new ArrayList<String>();
+        if (jsonArray != null) {
+            int len = jsonArray.length();
+            for (int i=0;i<len;i++){
+                list.add(jsonArray.get(i).toString());
+            }
+        }
+        return list;
+    }
 }
