@@ -10,13 +10,11 @@
 @property (nonatomic, strong) UIPickerView *pickerView;
 @property (nonatomic, strong) UIPopoverController *popoverController;
 @property (nonatomic, strong) UIView *modalView;
-@property (nonatomic, strong) NSArray *items;
+@property (nonatomic, strong) NSDictionary *options;
 
 // Multiple column storage properties
 @property (nonatomic, assign) NSInteger numberOfColumns;
-@property (nonatomic, strong) NSMutableArray *assignedValues;
-@property (nonatomic, strong) NSMutableArray *selectedRow;
-@property (nonatomic, strong) NSMutableArray *columnMappedOptions;
+@property (nonatomic, strong) NSMutableArray *selectedRows;
 
 #pragma mark - Instance methods
 

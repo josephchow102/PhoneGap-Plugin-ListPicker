@@ -19,13 +19,11 @@
 @synthesize pickerView = _pickerView;
 @synthesize popoverController = _popoverController;
 @synthesize modalView = _modalView;
-@synthesize items = _items;
+@synthesize options = _options;
 
-
-- (int)getRowWithValue:(NSString * )name {
-  for(int i = 0; i < [self.items count]; i++) {
-    NSDictionary *item = self.items[i];
-    if([name isEqualToString:item[@"value"]]) {
+- (int)rowOfValue:(NSString * )name inItems:(NSArray*)items {
+  for(int i = 0; i < items.count; i++) {
+    if([name isEqualToString:items[i][@"value"]]) {
       return i;
     }
   }
@@ -52,8 +50,6 @@
 
 - (void)showPicker:(CDVInvokedUrlCommand*)command {
 
-    NSLog(@"showPicker");
-
     self.callbackId = command.callbackId;
     NSDictionary *options = command.arguments[0];
   
@@ -63,11 +59,12 @@
     NSString *cancelButtonLabel = options[@"cancelButtonLabel"] ?: @"Cancel";
 
     // Hold items in an instance variable
-    self.items = options[@"items"];
-    self.numberOfColumns = [self getNumberOfColumnsByItems:self.items];
-    self.assignedValues = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
-    self.columnMappedOptions = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
-    self.selectedRow = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
+    self.options = options;
+    self.numberOfColumns = [self getNumberOfColumnsByItems:options[@"items"]];
+    self.selectedRows = [NSMutableArray array];
+    for (NSInteger i = 0; i < self.numberOfColumns; i++) {
+        [self.selectedRows addObject:@(0)];
+    }
 
     // Initialize the toolbar with Cancel and Done buttons and title
     UIToolbar *toolbar = [[UIToolbar alloc] initWithFrame: CGRectMake(0, 0, self.viewSize.width, 44)];
@@ -102,29 +99,20 @@
     self.pickerView.delegate = self;
 
     // Define selected value
-    if(options[@"selectedValue"]) {
-        int i = [self getRowWithValue:options[@"selectedValue"][0]];
-        if (i != -1) {
-            self.columnMappedOptions[0] = self.items;
-            [self.pickerView selectRow:i inComponent:0 animated:NO];
-            self.assignedValues[0] = self.columnMappedOptions[0][i][@"value"];
-            self.selectedRow[0] = @(i);
-            NSDictionary *currentObject = self.items[i];
-            for (NSInteger j = 1; j < self.numberOfColumns; j++) {
-                NSDictionary *next = currentObject[@"next"];
-                // if (!next) {
-                //     next = [NSDictionary dictionaryWithObjectsAndKeys:EMPTY_ITEMS, @"items", [NSNull null], @"title", nil];
-                // }
-                NSArray *items = next[@"items"];
-                self.selectedRow[j] = @(0);
-                if (!items || items == [NSNull null]) {
-                    items = EMPTY_ITEMS;
+    if (options[@"selectedValue"]) {
+        NSDictionary *currentOptions = options;
+        for (NSInteger i = 0; i < self.numberOfColumns; i++) {
+            int rowIndex = [self rowOfValue:options[@"selectedValue"][i] inItems:currentOptions[@"items"]];
+            if (rowIndex == -1) {
+                // reset other rows' index
+                for (NSInteger j = i; j < self.numberOfColumns; j++) {
+                    self.selectedRows[j] = @(0);
                 }
-                self.columnMappedOptions[j] = items;
-                [self.pickerView selectRow:0 inComponent:j animated:NO];
-                self.assignedValues[j] = items[0][@"value"];
-                currentObject = self.columnMappedOptions[j][0];
+                break;
             }
+            [self.pickerView selectRow:rowIndex inComponent:i animated:NO];
+            self.selectedRows[i] = @(rowIndex);
+            currentOptions = currentOptions[@"items"][rowIndex][@"next"];
         }
     }
    
@@ -301,12 +289,13 @@
 //
 
 - (void)sendResultsFromPickerView:(UIPickerView *)pickerView withButtonIndex:(NSInteger)buttonIndex {
-    NSError *error;
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:self.assignedValues options:0 error:&error];
-    NSString *jsonString;
 
-    if (jsonData) {
-        jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    NSMutableArray *assignedValues = [NSMutableArray array];
+    NSDictionary *currentOptions = self.options;
+    for (NSInteger i = 0; i < self.numberOfColumns; i++) {
+        int rowIndex = [self.selectedRows[i] intValue];
+        [assignedValues addObject:currentOptions[@"items"][rowIndex][@"value"]];
+        currentOptions = currentOptions[@"items"][rowIndex][@"next"];
     }
     
     // Create Plugin Result
@@ -316,7 +305,7 @@
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR];
     }else {
         // Create OK result otherwise
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:jsonString];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:assignedValues];
     }
     
     // Call appropriate javascript function
@@ -327,34 +316,31 @@
 // Picker delegate
 //
 
-- (NSDictionary *)restoreItems:(NSArray *)items atColumn:(NSInteger)column {
-    NSInteger row = [self.selectedRow[column] intValue];
-    self.columnMappedOptions[column] = items;
-    if ([items count] <= row) { // Out of range
-        row = 0;
-        self.selectedRow[column] = @(row);
-    }
-    NSDictionary *selected = items[row];
-    NSString *value = selected[@"value"];
-    self.assignedValues[column] = value;
-    [self.pickerView selectRow:row inComponent:column animated:NO];
-    return selected;
-}
-
 // Listen picker selected row
 - (void)pickerView:(UIPickerView *)pickerView didSelectRow:(NSInteger)row inComponent:(NSInteger)component {
-    self.selectedRow[component] = @(row);
-    NSDictionary *currentObject = self.columnMappedOptions[component][row];
-    self.assignedValues[component] = currentObject[@"value"];
+    for (NSInteger j = component + 1; j < self.numberOfColumns; j++) {
+        self.selectedRows[j] = @(0);
+        [self.pickerView selectRow:0 inComponent:j animated:NO];
+    }
+    self.selectedRows[component] = @(row);
     [self.pickerView reloadAllComponents];
 }
 
 // Tell the picker how many rows are available for a given component
 - (NSInteger)pickerView:(UIPickerView *)pickerView numberOfRowsInComponent:(NSInteger)component {
-    if ([self.columnMappedOptions count] <= component)
-        return 0;
-    NSArray *c = self.columnMappedOptions[component];
-    return c ? [c count] : 0;
+    NSDictionary* options = self.options;
+    NSInteger count = 0;
+    for (NSInteger i = 0; i < self.numberOfColumns && i <= component; i++) {
+        if (!options) {
+            count = 0;
+            break;
+        }
+        count = [options[@"items"] count];
+
+        int selectedRow = [self.selectedRows[i] intValue];
+        options = options[@"items"][selectedRow][@"next"];
+    }
+    return count;
 }
 
 // Tell the picker how many components it will have
@@ -364,10 +350,19 @@
 
 // Tell the picker the title for a given component
 - (NSString *)pickerView:(UIPickerView *)pickerView titleForRow:(NSInteger)row forComponent:(NSInteger)component {
-    if ([self.columnMappedOptions count] <= component)
-        return [NSNull null];
-    NSArray *c = self.columnMappedOptions[component];
-    return c ? c [row][@"text"] : [NSNull null];
+    NSDictionary* options = self.options;
+    NSString* title;
+    for (NSInteger i = 0; i < self.numberOfColumns && i <= component; i++) {
+        if (!options) {
+            title = @"";
+            break;
+        }
+        title = options[@"items"][row][@"text"];
+
+        int selectedRow = [self.selectedRows[i] intValue];
+        options = options[@"items"][selectedRow][@"next"];
+    }
+    return title;
 }
 
 // Tell the picker the width of each row for a given component
