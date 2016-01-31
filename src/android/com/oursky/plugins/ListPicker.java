@@ -87,7 +87,9 @@ public class ListPicker extends CordovaPlugin {
         }
 
         public void show() {
-            this.builder.show();
+            AlertDialog dialog = this.builder.create();
+            dialog.getWindow().getAttributes().windowAnimations = android.R.style.Animation_Dialog;
+            dialog.show();
         }
     }
 
