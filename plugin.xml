@@ -39,10 +39,10 @@
 
     <config-file target="res/xml/config.xml" parent="/*">
       <feature name="ListPicker">
-        <param name="android-package" value="am.armsoft.plugins.ListPicker" />
+        <param name="android-package" value="com.oursky.plugins.ListPicker" />
       </feature>
     </config-file>
 
-    <source-file src="src/android/am/armsoft/plugins/ListPicker.java" target-dir="src/am/armsoft/plugins" />
+    <source-file src="src/android/com/oursky/plugins/ListPicker.java" target-dir="src/com/oursky/plugins" />
   </platform>
 </plugin>

@@ -1,10 +1,7 @@
-package am.armsoft.plugins;
+package com.oursky.plugins;
 
 import java.lang.Runnable;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.prefs.PreferenceChangeEvent;
 
 import org.json.JSONObject;
 import org.json.JSONArray;
