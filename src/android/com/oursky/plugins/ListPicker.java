@@ -44,14 +44,14 @@ public class ListPicker extends CordovaPlugin {
                     final Items nextItems = items.items.get(which).nextItems;
                     Picker picker = new Picker(context, nextItems, null, depth + 1);
 
-                    picker.setDoneClickListener(new DialogInterface.OnClickListener() {
+                    picker.doneClickListener = new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface childDialog, int childWhich) {
                             nextItems.selected = childWhich;
                             doneClickListener.onClick(dialog, which);
                             childDialog.dismiss();
                         }
-                    });
+                    };
 
                     picker.show();
                 }
@@ -60,14 +60,14 @@ public class ListPicker extends CordovaPlugin {
 
         public Picker(Context context, final Items items, String title, final Runnable doneRunnable, final DialogInterface.OnCancelListener cancelListener) {
             this(context, items, title, 0);
-            this.setDoneClickListener(new DialogInterface.OnClickListener() {
+            this.doneClickListener = new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
                     items.selected = which;
                     dialog.dismiss();
                     doneRunnable.run();
                 }
-            });
+            };
             this.builder.setOnCancelListener(cancelListener);
         }
 
@@ -80,10 +80,6 @@ public class ListPicker extends CordovaPlugin {
 
             builder.setTitle(title);
             builder.setSingleChoiceItems(items.texts(), items.selected, onClickListener);
-        }
-
-        public void setDoneClickListener(DialogInterface.OnClickListener doneClickListener) {
-            this.doneClickListener = doneClickListener;
         }
 
         public void show() {
@@ -148,12 +144,6 @@ public class ListPicker extends CordovaPlugin {
     }
 
     /**
-     * Private Member;
-     */
-    private String mTitle;
-    private Items mItems;
-
-    /**
      * Constructor.
      */
     public ListPicker() {
@@ -186,8 +176,8 @@ public class ListPicker extends CordovaPlugin {
 
         final JSONObject options = data.getJSONObject(0);
 
-        this.mTitle = options.getString("title");
-        this.mItems = new Items(
+        final String title = options.getString("title");
+        final Items items = new Items(
                 options.getJSONArray("items"),
                 convertJSONArray(options.getJSONArray("selectedValue"))
         );
@@ -195,10 +185,10 @@ public class ListPicker extends CordovaPlugin {
         this.cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                Picker picker = new Picker(cordova.getActivity(), mItems, mTitle, new Runnable() {
+                Picker picker = new Picker(cordova.getActivity(), items, title, new Runnable() {
                     @Override
                     public void run() {
-                        ArrayList<String> selectedValues = mItems.selectedValues();
+                        ArrayList<String> selectedValues = items.selectedValues();
                         JSONArray selectedJsonArray = new JSONArray(selectedValues);
                         callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, selectedJsonArray));
                     }
