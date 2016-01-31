@@ -4,7 +4,7 @@
 #define IS_WIDESCREEN ( fabs( ( double )[ [ UIScreen mainScreen ] bounds ].size.height - ( double )568 ) < DBL_EPSILON )
 #define IS_IPAD UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad
 #define DEVICE_ORIENTATION [UIDevice currentDevice].orientation
-#define EMPTY_ITEMS [NSArray arrayWithObjects:[NSDictionary dictionaryWithObjectsAndKeys:@"", @"value", @"", @"text", nil], nil]
+#define EMPTY_ITEMS @[ @{ @"value": @"", @"text": @"" } ]
 #define MAX_NUMBER_OF_COLUMNS 3
 
 // UIInterfaceOrientationMask vs. UIInterfaceOrientation
@@ -24,8 +24,8 @@
 
 - (int)getRowWithValue:(NSString * )name {
   for(int i = 0; i < [self.items count]; i++) {
-    NSDictionary *item = [self.items objectAtIndex:i];
-    if([name isEqualToString:[item objectForKey:@"value"]]) {
+    NSDictionary *item = self.items[i];
+    if([name isEqualToString:item[@"value"]]) {
       return i;
     }
   }
@@ -38,8 +38,8 @@
 
     NSInteger maxDepth = 0;
     for (NSDictionary *data in items) {
-        NSDictionary *next = [data objectForKey:@"next"];
-        NSInteger depth = 1 + [self getNumberOfColumnsByItems:[next objectForKey:@"items"] withIteration:iteration + 1];
+        NSDictionary *next = data[@"next"];
+        NSInteger depth = 1 + [self getNumberOfColumnsByItems:next[@"items"] withIteration:iteration + 1];
         maxDepth = MAX(maxDepth, depth);
     }
 
@@ -52,16 +52,18 @@
 
 - (void)showPicker:(CDVInvokedUrlCommand*)command {
 
+    NSLog(@"showPicker");
+
     self.callbackId = command.callbackId;
-    NSDictionary *options = [command.arguments objectAtIndex:0];
+    NSDictionary *options = command.arguments[0];
   
     // Compiling options with defaults
-    NSString *title = [options objectForKey:@"title"] ?: @" ";
-    NSString *doneButtonLabel = [options objectForKey:@"doneButtonLabel"] ?: @"Done";
-    NSString *cancelButtonLabel = [options objectForKey:@"cancelButtonLabel"] ?: @"Cancel";
+    NSString *title = options[@"title"] ?: @" ";
+    NSString *doneButtonLabel = options[@"doneButtonLabel"] ?: @"Done";
+    NSString *cancelButtonLabel = options[@"cancelButtonLabel"] ?: @"Cancel";
 
     // Hold items in an instance variable
-    self.items = [options objectForKey:@"items"];
+    self.items = options[@"items"];
     self.numberOfColumns = [self getNumberOfColumnsByItems:self.items];
     self.assignedValues = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
     self.columnMappedOptions = [NSMutableArray arrayWithCapacity:self.numberOfColumns];
@@ -84,8 +86,8 @@
     [label setTextColor: (NSFoundationVersionNumber > NSFoundationVersionNumber_iOS_6_1) ? [UIColor blackColor] : [UIColor whiteColor]];
     [label setFont: [UIFont boldSystemFontOfSize:16]];
     [label setBackgroundColor:[UIColor clearColor]];
-     label.text = title;
-     UIBarButtonItem *labelButton = [[UIBarButtonItem alloc] initWithCustomView:label];
+    label.text = title;
+    UIBarButtonItem *labelButton = [[UIBarButtonItem alloc] initWithCustomView:label];
     [buttons addObject:labelButton];
     [buttons addObject:flexSpace];
      
@@ -100,28 +102,28 @@
     self.pickerView.delegate = self;
 
     // Define selected value
-    if([options objectForKey:@"selectedValue"]) {
-        int i = [self getRowWithValue:[options objectForKey:@"selectedValue"]];
+    if(options[@"selectedValue"]) {
+        int i = [self getRowWithValue:options[@"selectedValue"][0]];
         if (i != -1) {
-            [self.columnMappedOptions setObject:self.items atIndexedSubscript:0];
+            self.columnMappedOptions[0] = self.items;
             [self.pickerView selectRow:i inComponent:0 animated:NO];
-            [self.assignedValues setObject:[[[self.columnMappedOptions objectAtIndex:0] objectAtIndex:i] objectForKey:@"value"] atIndexedSubscript:0];
-            [self.selectedRow setObject:[NSNumber numberWithInt:i] atIndexedSubscript:0];
-            NSDictionary *currentObject = [self.items objectAtIndex:i];
+            self.assignedValues[0] = self.columnMappedOptions[0][i][@"value"];
+            self.selectedRow[0] = @(i);
+            NSDictionary *currentObject = self.items[i];
             for (NSInteger j = 1; j < self.numberOfColumns; j++) {
-                NSDictionary *next = [currentObject objectForKey:@"next"];
+                NSDictionary *next = currentObject[@"next"];
                 // if (!next) {
                 //     next = [NSDictionary dictionaryWithObjectsAndKeys:EMPTY_ITEMS, @"items", [NSNull null], @"title", nil];
                 // }
-                NSArray *items = [next objectForKey:@"items"];
-                [self.selectedRow setObject:[NSNumber numberWithInt:0] atIndexedSubscript:j];
+                NSArray *items = next[@"items"];
+                self.selectedRow[j] = @(0);
                 if (!items || items == [NSNull null]) {
                     items = EMPTY_ITEMS;
                 }
-                [self.columnMappedOptions setObject:items atIndexedSubscript:j];
+                self.columnMappedOptions[j] = items;
                 [self.pickerView selectRow:0 inComponent:j animated:NO];
-                [self.assignedValues setObject:[[items objectAtIndex:0] objectForKey:@"value"] atIndexedSubscript:j];
-                currentObject = [[self.columnMappedOptions objectAtIndex:j] objectAtIndex:0];
+                self.assignedValues[j] = items[0][@"value"];
+                currentObject = self.columnMappedOptions[j][0];
             }
         }
     }
@@ -179,7 +181,7 @@
                           delay:0.0
                         options: 0
                      animations:^{
-                         [self.modalView.subviews[0] setFrame: CGRectOffset(viewFrame, 0, viewFrame.size.height - 260)];;
+                         [self.modalView.subviews[0] setFrame:CGRectOffset(viewFrame, 0, viewFrame.size.height - 260)];;
                          [self.modalView setBackgroundColor:[UIColor colorWithWhite:0.0 alpha:0.5]];
                      }
                      completion:nil];
@@ -326,30 +328,30 @@
 //
 
 - (NSDictionary *)restoreItems:(NSArray *)items atColumn:(NSInteger)column {
-    NSInteger row = [[self.selectedRow objectAtIndex:column] intValue];
-    [self.columnMappedOptions setObject:items atIndexedSubscript:column];
+    NSInteger row = [self.selectedRow[column] intValue];
+    self.columnMappedOptions[column] = items;
     if ([items count] <= row) { // Out of range
         row = 0;
-        [self.selectedRow setObject:[NSNumber numberWithInt:row] atIndexedSubscript:column];
+        self.selectedRow[column] = @(row);
     }
-    NSDictionary *selected = [items objectAtIndex:row];
-    NSString *value = [selected objectForKey:@"value"];
-    [self.assignedValues setObject:value atIndexedSubscript:column];
+    NSDictionary *selected = items[row];
+    NSString *value = selected[@"value"];
+    self.assignedValues[column] = value;
     [self.pickerView selectRow:row inComponent:column animated:NO];
     return selected;
 }
 
 // Listen picker selected row
 - (void)pickerView:(UIPickerView *)pickerView didSelectRow:(NSInteger)row inComponent:(NSInteger)component {
-    [self.selectedRow setObject:[NSNumber numberWithInt:row] atIndexedSubscript:component];
-    NSDictionary *currentObject = [[self.columnMappedOptions objectAtIndex:component] objectAtIndex:row];
-    [self.assignedValues setObject:[currentObject objectForKey:@"value"] atIndexedSubscript:component];
+    self.selectedRow[component] = @(row);
+    NSDictionary *currentObject = self.columnMappedOptions[component][row];
+    self.assignedValues[component] = currentObject[@"value"];
     for (NSInteger j = component + 1; j < self.numberOfColumns; j++) {
-        NSDictionary *next = [currentObject objectForKey:@"next"];
+        NSDictionary *next = currentObject[@"next"];
         if (!next) {
-            next = [NSDictionary dictionaryWithObjectsAndKeys:EMPTY_ITEMS, @"items", [NSNull null], @"title", nil];
+            next = @{ @"items": EMPTY_ITEMS, @"title": [NSNull null] };
         }
-        NSArray *items = [next objectForKey:@"items"];
+        NSArray *items = next[@"items"];
         if (!items || items == [NSNull null]) {
             items = EMPTY_ITEMS;
         }
@@ -363,7 +365,7 @@
 - (NSInteger)pickerView:(UIPickerView *)pickerView numberOfRowsInComponent:(NSInteger)component {
     if ([self.columnMappedOptions count] <= component)
         return 0;
-    NSArray *c = [self.columnMappedOptions objectAtIndex:component];
+    NSArray *c = self.columnMappedOptions[component];
     return c ? [c count] : 0;
 }
 
@@ -376,8 +378,8 @@
 - (NSString *)pickerView:(UIPickerView *)pickerView titleForRow:(NSInteger)row forComponent:(NSInteger)component {
     if ([self.columnMappedOptions count] <= component)
         return [NSNull null];
-    NSArray *c = [self.columnMappedOptions objectAtIndex:component];
-    return c ? [[c objectAtIndex:row] objectForKey:@"text"] : [NSNull null];
+    NSArray *c = self.columnMappedOptions[component];
+    return c ? c [row][@"text"] : [NSNull null];
 }
 
 // Tell the picker the width of each row for a given component
