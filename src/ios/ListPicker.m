@@ -346,18 +346,6 @@
     self.selectedRow[component] = @(row);
     NSDictionary *currentObject = self.columnMappedOptions[component][row];
     self.assignedValues[component] = currentObject[@"value"];
-    for (NSInteger j = component + 1; j < self.numberOfColumns; j++) {
-        NSDictionary *next = currentObject[@"next"];
-        if (!next) {
-            next = @{ @"items": EMPTY_ITEMS, @"title": [NSNull null] };
-        }
-        NSArray *items = next[@"items"];
-        if (!items || items == [NSNull null]) {
-            items = EMPTY_ITEMS;
-        }
-        NSDictionary* restoredItem = [self restoreItems:items atColumn:j];
-        currentObject = restoredItem;
-    }
     [self.pickerView reloadAllComponents];
 }
 
