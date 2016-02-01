@@ -99,7 +99,7 @@
     self.pickerView.delegate = self;
 
     // Define selected value
-    if (options[@"selectedValue"]) {
+    if (options[@"selectedValue"] && [options[@"selectedValue"] isKindOfClass:[NSArray class]]) {
         NSDictionary *currentOptions = options;
         for (NSInteger i = 0; i < self.numberOfColumns; i++) {
             int rowIndex = [self rowOfValue:options[@"selectedValue"][i] inItems:currentOptions[@"items"]];
@@ -332,10 +332,12 @@
     NSInteger count = 0;
     for (NSInteger i = 0; i < self.numberOfColumns && i <= component; i++) {
         if (!options) {
-            count = 0;
             break;
         }
-        count = [options[@"items"] count];
+        if (i == component) {
+            count = [options[@"items"] count];
+            break;
+        }
 
         int selectedRow = [self.selectedRows[i] intValue];
         options = options[@"items"][selectedRow][@"next"];
@@ -351,16 +353,19 @@
 // Tell the picker the title for a given component
 - (NSString *)pickerView:(UIPickerView *)pickerView titleForRow:(NSInteger)row forComponent:(NSInteger)component {
     NSDictionary* options = self.options;
-    NSString* title;
+    NSString* title = @"";
     for (NSInteger i = 0; i < self.numberOfColumns && i <= component; i++) {
         if (!options) {
-            title = @"";
             break;
         }
-        title = options[@"items"][row][@"text"];
+        if (i == component) {
+            title = options[@"items"][row][@"text"];
+            break;
+        }
 
         int selectedRow = [self.selectedRows[i] intValue];
         options = options[@"items"][selectedRow][@"next"];
+
     }
     return title;
 }
