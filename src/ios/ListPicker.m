@@ -101,7 +101,7 @@
     // Define selected value
     if (options[@"selectedValue"] && [options[@"selectedValue"] isKindOfClass:[NSArray class]]) {
         NSDictionary *currentOptions = options;
-        for (NSInteger i = 0; i < self.numberOfColumns; i++) {
+        for (NSInteger i = 0; i < self.numberOfColumns && i < [options[@"selectedValue"] count]; i++) {
             int rowIndex = [self rowOfValue:options[@"selectedValue"][i] inItems:currentOptions[@"items"]];
             if (rowIndex == -1) {
                 // reset other rows' index
