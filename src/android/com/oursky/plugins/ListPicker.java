@@ -97,12 +97,16 @@ public class ListPicker extends CordovaPlugin {
             this.items = new ArrayList<Item>();
             this.selected = 0;
 
-            String selected = selectedValue.get(0);
-            ArrayList<String> newSelectedValue = (ArrayList<String>) selectedValue.clone();
-            newSelectedValue.remove(0);
+            String selected = null;
+            ArrayList<String> newSelectedValue = null;
+            if (selectedValue != null && selectedValue.size() > 0) {
+                selected = selectedValue.get(0);
+                newSelectedValue = (ArrayList<String>) selectedValue.clone();
+                newSelectedValue.remove(0);
+            }
             for (int i = 0; i < items.length(); i++) {
                 Item item = new Item(items.getJSONObject(i), newSelectedValue);
-                if (selected.equals(item.value)) {
+                if (selected != null && selected.equals(item.value)) {
                     this.selected = i;
                 }
                 this.items.add(item);
