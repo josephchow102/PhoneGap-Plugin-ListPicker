@@ -5,7 +5,6 @@
 //
 // Copyright 2014 Robert Hovhannisyan. All rights reserved.
 // MIT Licensed
-var exec = require('cordova/exec');
 
 var ListPicker = function() {}
 
