@@ -165,7 +165,7 @@
     [self.webView.superview bringSubviewToFront:self.modalView];
     
     //Present the view animated
-    [UIView animateWithDuration:0.5
+    [UIView animateWithDuration:0.2
                           delay:0.0
                         options: 0
                      animations:^{
@@ -268,7 +268,7 @@
                                                   object:nil];
         
     //Hide the view animated and then remove it.
-    [UIView animateWithDuration:0.5
+    [UIView animateWithDuration:0.2
                           delay:0.0
                         options: 0
                      animations:^{
